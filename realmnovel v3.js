@@ -1,6 +1,6 @@
 // ==MiruExtension==
 // @name         RealmNovel
-// @version      v0.0.1
+// @version      v1.0.0
 // @author       Amr
 // @lang         ar
 // @license      MIT
@@ -15,78 +15,82 @@ export default class RealmNovel extends Extension {
   async latest() {
     const res = await this.request("/");
 
-    // استخراج قائمة الروايات المحدثة حديثًا
-    const novelList = res.match(/<div class="novel-item">[\s\S]+?<\/div>/g);
+    // استخراج قائمة الروايات الجديدة
+    const novelList = res.match(/<div class="group relative flex flex-col overflow-hidden rounded bg-card p-3">[\s\S]+?<\/div>/g);
     const novels = [];
 
     novelList.forEach((element) => {
-      const url = element.match(/href="(.+?)"/)[1];
-      const title = element.match(/title="(.+?)"/)[1].trim();
-      const cover = element.match(/src="(.+?)"/)[1];
+      const url = element.match(/href="(.+?)"/)?.[1] || "";
+      const title = element.match(/alt="(.+?)"/)?.[1].trim() || "عنوان غير معروف";
+      const cover = element.match(/src="(.+?)"/)?.[1] || "";
 
-      novels.push({ title, url, cover });
+      if (url) {
+        novels.push({ title, url, cover });
+      }
     });
+
     return novels;
   }
 
-  async search(kw, page) {
+  async search(kw) {
     const res = await this.request(`/search?q=${kw.replace(/\s+/g, '+')}`);
-    const novelList = res.match(/<div class="relative">[\s\S]+?<\/div>/g);
-
+    const novelList = res.match(/<div class="group relative flex flex-col overflow-hidden rounded bg-card p-3">[\s\S]+?<\/div>/g);
     const novels = [];
 
     novelList.forEach((element) => {
-      const url = element.match(/href="(.+?)"/)[1];
-      const title = element.match(/title="(.+?)"/)[1].trim();
-      const cover = element.match(/src="(.+?)"/)[1];
+      const url = element.match(/href="(.+?)"/)?.[1] || "";
+      const title = element.match(/alt="(.+?)"/)?.[1].trim() || "عنوان غير معروف";
+      const cover = element.match(/src="(.+?)"/)?.[1] || "";
 
-      novels.push({ title, url, cover });
+      if (url) {
+        novels.push({ title, url, cover });
+      }
     });
+
     return novels;
   }
 
   async detail(url) {
     const res = await this.request(url);
 
-    const title = res.match(/<h1 class="md:text-4xl">([\s\S]+?)<\/h1>/)[1];
-    const cover = res.match(/<img class="object-cover" src="(.+?)"/)[1];
-    const desc = res.match(/<p class="md:text-lg">([\s\S]+?)<\/div>/)[1]
-      .replace(/<[^>]+>/g, '')
-      .trim();
+    // استخراج معلومات الرواية
+    const title = res.match(/<h1 class="text-4xl font-bold">([\s\S]+?)<\/h1>/)?.[1].trim() || "عنوان غير معروف";
+    const cover = res.match(/<img class="object-cover" src="(.+?)"/)?.[1] || "";
+    const desc = res.match(/<div class="my-4 text-muted-foreground">([\s\S]+?)<\/div>/)?.[1].replace(/<[^>]+>/g, '').trim() || "لا يوجد وصف.";
 
+    // استخراج الفصول
     const episodes = [];
-    const epiList = res.match(/<ul class="chapter-list">([\s\S]+?)<\/ul>/)[1].match(/<li>[\s\S]+?<\/li>/g);
+    const epiList = res.match(/<a class="block w-full truncate rounded p-2 text-start transition-all hover:bg-primary"[\s\S]+?<\/a>/g) || [];
 
     epiList.forEach((element) => {
-      const name = element.match(/<a.*>(.+?)<\/a>/)[1];
-      const url = element.match(/href="([^"]+)"/)[1];
+      const name = element.match(/>([^<]+)<\/a>/)?.[1].trim() || "فصل غير معروف";
+      const url = element.match(/href="([^"]+)"/)?.[1] || "";
 
-      episodes.push({ name, url });
+      if (url) {
+        episodes.push({ name, url });
+      }
     });
 
     return {
       title,
       cover,
       desc,
-      episodes: [
-        {
-          title: "الفصول",
-          urls: episodes.reverse(),
-        },
-      ],
+      episodes: [{ title: "الفصول", urls: episodes.reverse() }],
     };
   }
 
   async watch(url) {
     const res = await this.request(url);
-    const title = res.match(/<h1 class="md:text-2xl">([\s\S]+?)<\/h1>/)[1];
 
-    // استخراج المحتوى باستخدام الكلاس الصحيح
+    // استخراج اسم الفصل
+    const title = res.match(/<h1 class="text-2xl font-bold">([\s\S]+?)<\/h1>/)?.[1].trim() || "عنوان غير معروف";
+
+    // استخراج محتوى الفصل مع تجاوز الحماية
     const match = res.match(/<div class="prose max-w-none">([\s\S]+?)<\/div>/);
-    let chapterContentDiv = match ? match[1] : "";
+    let chapterContent = match ? match[1] : "لم يتم العثور على المحتوى.";
 
-    chapterContentDiv = chapterContentDiv
-      .replace(/<[^>]+>/g, '\n')
+    chapterContent = chapterContent
+      .replace(/<[^>]+>/g, '\n') // إزالة أكواد HTML
       .replace(/&#39;/g, "'")
       .replace(/&nbsp;/g, ' ')
       .replace(/’/g, "'")
@@ -94,8 +98,6 @@ export default class RealmNovel extends Extension {
       .replace(/&rdquo;/g, '"')
       .trim();
 
-    const content = chapterContentDiv.split(/\n\n\n/g);
-
-    return { title, content };
+    return { title, content: chapterContent.split(/\n\n/g) };
   }
 }
