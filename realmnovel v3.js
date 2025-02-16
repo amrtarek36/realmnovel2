@@ -11,20 +11,9 @@
 // @nsfw         false
 // ==/MiruExtension==
 
-import puppeteer from 'puppeteer';
-
 export default class RealmNovel extends Extension {
-  async requestWithPuppeteer(url) {
-    const browser = await puppeteer.launch({ headless: true });
-    const page = await browser.newPage();
-    await page.goto(url, { waitUntil: 'networkidle2' });
-    const content = await page.content();
-    await browser.close();
-    return content;
-  }
-
   async latest() {
-    const res = await this.requestWithPuppeteer("https://www.realmnovel.com/");
+    const res = await this.request("/");
     const novelList = res.match(/<div class="novel-item">[\s\S]+?<\/div>/g);
     if (!novelList) return [];
 
@@ -43,8 +32,8 @@ export default class RealmNovel extends Extension {
     }).filter(novel => novel !== null);
   }
 
-  async search(kw) {
-    const res = await this.requestWithPuppeteer(`https://www.realmnovel.com/search?q=${kw.replace(/\s+/g, '+')}`);
+  async search(kw, page) {
+    const res = await this.request(`/search?q=${encodeURIComponent(kw)}`);
     const novelList = res.match(/<div class="relative">[\s\S]+?<\/div>/g);
     if (!novelList) return [];
 
@@ -64,7 +53,8 @@ export default class RealmNovel extends Extension {
   }
 
   async detail(url) {
-    const res = await this.requestWithPuppeteer(url);
+    const res = await this.request(url);
+
     const titleMatch = res.match(/<h1 class="md:text-4xl">([\s\S]+?)<\/h1>/);
     const coverMatch = res.match(/<img class="object-cover" src="(.+?)"/);
     const descMatch = res.match(/<p class="md:text-lg">([\s\S]+?)<\/div>/);
@@ -72,8 +62,13 @@ export default class RealmNovel extends Extension {
 
     if (!titleMatch || !coverMatch || !descMatch || !episodeListMatch) return null;
 
+    const title = titleMatch[1].trim();
+    const cover = coverMatch[1];
+    const desc = descMatch[1].replace(/<[^>]+>/g, '').trim();
+
     const episodes = [];
     const epiList = episodeListMatch[1].match(/<li>[\s\S]+?<\/li>/g) || [];
+
     epiList.forEach(element => {
       const nameMatch = element.match(/<a.*>(.+?)<\/a>/);
       const urlMatch = element.match(/href="([^"]+)"/);
@@ -87,21 +82,23 @@ export default class RealmNovel extends Extension {
     });
 
     return {
-      title: titleMatch[1].trim(),
-      cover: coverMatch[1],
-      desc: descMatch[1].replace(/<[^>]+>/g, '').trim(),
+      title,
+      cover,
+      desc,
       episodes: [{ title: "الفصول", urls: episodes.reverse() }],
     };
   }
 
   async watch(url) {
-    const res = await this.requestWithPuppeteer(url);
+    const res = await this.request(url);
     const titleMatch = res.match(/<h1 class="md:text-2xl">([\s\S]+?)<\/h1>/);
     const match = res.match(/<div class="chapter-content-card">[\s\S]+?<div[^>]*>([\s\S]+?)<\/div>/);
 
     if (!titleMatch || !match) return null;
 
-    let chapterContentDiv = match[1]
+    let chapterContentDiv = match[1];
+
+    chapterContentDiv = chapterContentDiv
       .replace(/<[^>]+>/g, '\n')
       .replace(/&#39;/g, "'")
       .replace(/&nbsp;/g, ' ')
@@ -110,9 +107,8 @@ export default class RealmNovel extends Extension {
       .replace(/&rdquo;/g, '"')
       .trim();
 
-    return {
-      title: titleMatch[1].trim(),
-      content: chapterContentDiv.split(/\n\n\n/g),
-    };
+    const content = chapterContentDiv.split(/\n\n\n/g);
+
+    return { title: titleMatch[1].trim(), content };
   }
 }
