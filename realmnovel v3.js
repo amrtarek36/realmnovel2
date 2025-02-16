@@ -1,4 +1,17 @@
-export default class extends Extension {
+// ==MiruExtension==
+// @name         RealmNovel
+// @version      v1.0.1
+// @author       Amr
+// @lang         ar
+// @license      MIT
+// @icon         https://www.realmnovel.com/favicon.ico
+// @package      realm.novel
+// @type         fikushon
+// @webSite      https://www.realmnovel.com
+// @nsfw         false
+// ==/MiruExtension==
+
+export default class RealmNovel extends Extension {
   constructor() {
     super("RealmNovel", "https://www.realmnovel.com", "ar");
   }
@@ -45,7 +58,6 @@ export default class extends Extension {
 
   async detail(url) {
     const res = await this.request(url);
-
     const titleMatch = res.match(/<h1 class="md:text-4xl">([\s\S]+?)<\/h1>/);
     const coverMatch = res.match(/<img class="object-cover" src="(.+?)"/);
     const descMatch = res.match(/<p class="md:text-lg">([\s\S]+?)<\/div>/);
