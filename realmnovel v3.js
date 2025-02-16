@@ -1,17 +1,8 @@
-// ==MiruExtension==
-// @name         RealmNovel
-// @version      v1.0.1
-// @author       Amr
-// @lang         ar
-// @license      MIT
-// @icon         https://www.realmnovel.com/favicon.ico
-// @package      realm.novel
-// @type         fikushon
-// @webSite      https://www.realmnovel.com
-// @nsfw         false
-// ==/MiruExtension==
+export default class extends Extension {
+  constructor() {
+    super("RealmNovel", "https://www.realmnovel.com", "ar");
+  }
 
-export default class RealmNovel extends Extension {
   async latest() {
     const res = await this.request("/");
     const novelList = res.match(/<div class="novel-item">[\s\S]+?<\/div>/g);
