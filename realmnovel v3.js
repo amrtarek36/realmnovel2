@@ -11,73 +11,79 @@
 // @nsfw         false
 // ==/MiruExtension==
 
+import puppeteer from 'puppeteer';
+import axios from 'axios';
+import cheerio from 'cheerio';
+
 export default class RealmNovel extends Extension {
-  async latest() {
-    const res = await this.request("/");
-    const novelList = res.match(/<div class="novel-item">[\s\S]+?<\/div>/g);
-    if (!novelList) return [];
-
-    return novelList.map(element => {
-      const urlMatch = element.match(/href="(.+?)"/);
-      const titleMatch = element.match(/title="(.+?)"/);
-      const coverMatch = element.match(/src="(.+?)"/);
-
-      if (!urlMatch || !titleMatch || !coverMatch) return null;
-
-      return {
-        title: titleMatch[1].trim(),
-        url: `https://www.realmnovel.com${urlMatch[1]}`,
-        cover: coverMatch[1],
-      };
-    }).filter(novel => novel !== null);
+  async requestWithPuppeteer(url) {
+    const browser = await puppeteer.launch({ headless: true });
+    const page = await browser.newPage();
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    const content = await page.content();
+    await browser.close();
+    return content;
   }
 
-  async search(kw, page) {
-    const res = await this.request(`/search?q=${encodeURIComponent(kw)}`);
-    const novelList = res.match(/<div class="relative">[\s\S]+?<\/div>/g);
-    if (!novelList) return [];
+  async latest() {
+    const html = await this.requestWithPuppeteer("https://www.realmnovel.com/");
+    const $ = cheerio.load(html);
+    const novelList = [];
 
-    return novelList.map(element => {
-      const urlMatch = element.match(/href="(.+?)"/);
-      const titleMatch = element.match(/title="(.+?)"/);
-      const coverMatch = element.match(/src="(.+?)"/);
+    $('.novel-item').each((_, element) => {
+      const title = $(element).find('a[title]').attr('title')?.trim();
+      const url = $(element).find('a').attr('href');
+      const cover = $(element).find('img').attr('src');
+      
+      if (title && url && cover) {
+        novelList.push({
+          title,
+          url: `https://www.realmnovel.com${url}`,
+          cover,
+        });
+      }
+    });
 
-      if (!urlMatch || !titleMatch || !coverMatch) return null;
+    return novelList;
+  }
 
-      return {
-        title: titleMatch[1].trim(),
-        url: `https://www.realmnovel.com${urlMatch[1]}`,
-        cover: coverMatch[1],
-      };
-    }).filter(novel => novel !== null);
+  async search(kw) {
+    const html = await this.requestWithPuppeteer(`https://www.realmnovel.com/search?q=${encodeURIComponent(kw)}`);
+    const $ = cheerio.load(html);
+    const novelList = [];
+
+    $('.relative').each((_, element) => {
+      const title = $(element).find('a[title]').attr('title')?.trim();
+      const url = $(element).find('a').attr('href');
+      const cover = $(element).find('img').attr('src');
+      
+      if (title && url && cover) {
+        novelList.push({
+          title,
+          url: `https://www.realmnovel.com${url}`,
+          cover,
+        });
+      }
+    });
+
+    return novelList;
   }
 
   async detail(url) {
-    const res = await this.request(url);
+    const html = await this.requestWithPuppeteer(url);
+    const $ = cheerio.load(html);
 
-    const titleMatch = res.match(/<h1 class="md:text-4xl">([\s\S]+?)<\/h1>/);
-    const coverMatch = res.match(/<img class="object-cover" src="(.+?)"/);
-    const descMatch = res.match(/<p class="md:text-lg">([\s\S]+?)<\/div>/);
-    const episodeListMatch = res.match(/<ul class="chapter-list">([\s\S]+?)<\/ul>/);
-
-    if (!titleMatch || !coverMatch || !descMatch || !episodeListMatch) return null;
-
-    const title = titleMatch[1].trim();
-    const cover = coverMatch[1];
-    const desc = descMatch[1].replace(/<[^>]+>/g, '').trim();
-
+    const title = $('h1.md\:text-4xl').text().trim();
+    const cover = $('img.object-cover').attr('src');
+    const desc = $('p.md\:text-lg').text().trim();
     const episodes = [];
-    const epiList = episodeListMatch[1].match(/<li>[\s\S]+?<\/li>/g) || [];
 
-    epiList.forEach(element => {
-      const nameMatch = element.match(/<a.*>(.+?)<\/a>/);
-      const urlMatch = element.match(/href="([^"]+)"/);
-
-      if (nameMatch && urlMatch) {
-        episodes.push({
-          name: nameMatch[1].trim(),
-          url: `https://www.realmnovel.com${urlMatch[1]}`,
-        });
+    $('.chapter-list li').each((_, element) => {
+      const name = $(element).find('a').text().trim();
+      const url = $(element).find('a').attr('href');
+      
+      if (name && url) {
+        episodes.push({ name, url: `https://www.realmnovel.com${url}` });
       }
     });
 
@@ -90,25 +96,24 @@ export default class RealmNovel extends Extension {
   }
 
   async watch(url) {
-    const res = await this.request(url);
-    const titleMatch = res.match(/<h1 class="md:text-2xl">([\s\S]+?)<\/h1>/);
-    const match = res.match(/<div class="chapter-content-card">[\s\S]+?<div[^>]*>([\s\S]+?)<\/div>/);
+    const html = await this.requestWithPuppeteer(url);
+    const $ = cheerio.load(html);
+    
+    const title = $('h1.md\:text-2xl').text().trim();
+    let content = $('.chapter-content-card div').html();
 
-    if (!titleMatch || !match) return null;
+    if (!content) return null;
 
-    let chapterContentDiv = match[1];
-
-    chapterContentDiv = chapterContentDiv
+    content = content
       .replace(/<[^>]+>/g, '\n')
       .replace(/&#39;/g, "'")
       .replace(/&nbsp;/g, ' ')
       .replace(/’/g, "'")
       .replace(/&ldquo;/g, '"')
       .replace(/&rdquo;/g, '"')
-      .trim();
+      .trim()
+      .split(/\n\n\n/g);
 
-    const content = chapterContentDiv.split(/\n\n\n/g);
-
-    return { title: titleMatch[1].trim(), content };
+    return { title, content };
   }
 }
