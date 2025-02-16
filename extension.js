@@ -6,7 +6,7 @@
 // @license      MIT
 // @icon         https://www.realmnovel.com/favicon.ico
 // @package      realm.novel
-// @type         novel
+// @type         fikushon 
 // @webSite      https://www.realmnovel.com
 // @nsfw         false
 // ==/MiruExtension==
