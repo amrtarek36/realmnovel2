@@ -1,119 +1,112 @@
 // ==MiruExtension==
 // @name         RealmNovel
-// @version      v1.0.2
-// @author       Amr
-// @lang         ar
+// @version      v1.0.0
+// @author       Custom
+// @lang         en
 // @license      MIT
 // @icon         https://www.realmnovel.com/favicon.ico
 // @package      realm.novel
-// @type         fikushon
+// @type         novel
 // @webSite      https://www.realmnovel.com
 // @nsfw         false
 // ==/MiruExtension==
 
-import puppeteer from 'puppeteer';
-import axios from 'axios';
-import cheerio from 'cheerio';
-
 export default class RealmNovel extends Extension {
-  async requestWithPuppeteer(url) {
-    const browser = await puppeteer.launch({ headless: true });
-    const page = await browser.newPage();
-    await page.goto(url, { waitUntil: 'domcontentloaded' });
-    const content = await page.content();
-    await browser.close();
-    return content;
-  }
-
   async latest() {
-    const html = await this.requestWithPuppeteer("https://www.realmnovel.com/");
-    const $ = cheerio.load(html);
-    const novelList = [];
+    const res = await this.request("/");
+    const novelsList = res.match(/<div class="novel-item">[\s\S]+?<\/div>/g);
+    const novels = [];
+    
+    novelsList.forEach((element) => {
+      const url = element.match(/href="(.+?)"/)[1];
+      const title = element.match(/title="(.+?)"/)[1].trim();
+      const cover = element.match(/src="(.+?)"/)[1];
 
-    $('.novel-item').each((_, element) => {
-      const title = $(element).find('a[title]').attr('title')?.trim();
-      const url = $(element).find('a').attr('href');
-      const cover = $(element).find('img').attr('src');
-      
-      if (title && url && cover) {
-        novelList.push({
-          title,
-          url: `https://www.realmnovel.com${url}`,
-          cover,
-        });
-      }
+      novels.push({
+        title,
+        url,
+        cover,
+      });
     });
 
-    return novelList;
+    return novels;
   }
 
   async search(kw) {
-    const html = await this.requestWithPuppeteer(`https://www.realmnovel.com/search?q=${encodeURIComponent(kw)}`);
-    const $ = cheerio.load(html);
-    const novelList = [];
+    const searchUrl = `/search/${kw.replace(/\s+/g, '_')}`;
+    const res = await this.request(searchUrl);
+    const searchList = res.match(/<div class="novel-item">[\s\S]+?<\/div>/g);
+    const novels = [];
 
-    $('.relative').each((_, element) => {
-      const title = $(element).find('a[title]').attr('title')?.trim();
-      const url = $(element).find('a').attr('href');
-      const cover = $(element).find('img').attr('src');
-      
-      if (title && url && cover) {
-        novelList.push({
-          title,
-          url: `https://www.realmnovel.com${url}`,
-          cover,
-        });
-      }
+    searchList.forEach((element) => {
+      const url = element.match(/href="(.+?)"/)[1];
+      const title = element.match(/title="(.+?)"/)[1].trim();
+      const cover = element.match(/src="(.+?)"/)[1];
+
+      novels.push({
+        title,
+        url,
+        cover,
+      });
     });
 
-    return novelList;
+    return novels;
   }
 
   async detail(url) {
-    const html = await this.requestWithPuppeteer(url);
-    const $ = cheerio.load(html);
+    const res = await this.request(url, {
+      headers: {
+        "miru-referer": "https://www.realmnovel.com/",
+      },
+    });
 
-    const title = $('h1.md\:text-4xl').text().trim();
-    const cover = $('img.object-cover').attr('src');
-    const desc = $('p.md\:text-lg').text().trim();
+    const title = res.match(/<h1.*?>(.*?)<\/h1>/)[1];
+    const cover = res.match(/<img class="cover" src="(.+?)"/)[1];
+    const desc = res.match(/<div class="novel-summary">([\s\S]+?)<\/div>/)[1]
+      .replace(/<[^>]+>/g, '')
+      .trim();
+
     const episodes = [];
+    const episodeList = res.match(/<li class="chapter-item">([\s\S]+?)<\/li>/g);
 
-    $('.chapter-list li').each((_, element) => {
-      const name = $(element).find('a').text().trim();
-      const url = $(element).find('a').attr('href');
-      
-      if (name && url) {
-        episodes.push({ name, url: `https://www.realmnovel.com${url}` });
-      }
+    episodeList.forEach((element) => {
+      const name = element.match(/>(.+?)<\/a>/)[1].trim();
+      const url = element.match(/href="(.+?)"/)[1];
+
+      episodes.push({
+        name,
+        url,
+      });
     });
 
     return {
       title,
       cover,
       desc,
-      episodes: [{ title: "الفصول", urls: episodes.reverse() }],
+      episodes: [
+        {
+          title: "Chapters",
+          urls: episodes.reverse(),
+        },
+      ],
     };
   }
 
   async watch(url) {
-    const html = await this.requestWithPuppeteer(url);
-    const $ = cheerio.load(html);
+    const res = await this.request(url);
+    const title = res.match(/<h1 class="chapter-title">([\s\S]+?)<\/h1>/)[1].trim();
     
-    const title = $('h1.md\:text-2xl').text().trim();
-    let content = $('.chapter-content-card div').html();
-
-    if (!content) return null;
-
-    content = content
+    let contentDiv = res.match(/<div class="chapter-content">([\s\S]+?)<\/div>/)[1];
+    contentDiv = contentDiv
       .replace(/<[^>]+>/g, '\n')
-      .replace(/&#39;/g, "'")
       .replace(/&nbsp;/g, ' ')
-      .replace(/’/g, "'")
-      .replace(/&ldquo;/g, '"')
-      .replace(/&rdquo;/g, '"')
-      .trim()
-      .split(/\n\n\n/g);
+      .trim();
 
-    return { title, content };
+    const content = contentDiv.split(/\n\n+/);
+
+    return {
+      title,
+      content,
+    };
   }
 }
